@@ -30,9 +30,9 @@ import org.junit.rules.ExpectedException;
 import software.amazon.awssdk.core.RequestOverrideConfiguration;
 import software.amazon.awssdk.core.SdkRequestOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkClientConfiguration;
-import software.amazon.awssdk.core.client.config.SdkClientOption;
 import software.amazon.awssdk.core.http.HttpResponseHandler;
 import software.amazon.awssdk.core.metrics.CoreMetric;
+import software.amazon.awssdk.http.HttpMetric;
 import software.amazon.awssdk.http.SdkHttpFullResponse;
 import software.amazon.awssdk.metrics.MetricCollector;
 import software.amazon.awssdk.metrics.MetricPublisher;
@@ -115,11 +115,10 @@ public class MetricUtilsTest {
 
         MetricUtils.collectHttpMetrics(mockCollector, response);
 
-        verify(mockCollector).reportMetric(CoreMetric.HTTP_STATUS_CODE, statusCode);
+        verify(mockCollector).reportMetric(HttpMetric.HTTP_STATUS_CODE, statusCode);
         verify(mockCollector).reportMetric(CoreMetric.AWS_REQUEST_ID, requestId);
         verify(mockCollector).reportMetric(CoreMetric.AWS_REQUEST_ID, amznRequestId);
         verify(mockCollector).reportMetric(CoreMetric.AWS_EXTENDED_REQUEST_ID, requestId2);
-
     }
 
     @Test
