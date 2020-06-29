@@ -24,20 +24,50 @@ which makes it possible for customers to customize polling function, define expe
 
 #### Example 1: Using sync waiters
 
+- instantiate a waiter object from an existing service client
+
 ```Java
 DynamoDbClient client = DynamoDbClient.create();
+DynamodbWaiter waiter = client.waiter();
 
-DescribeTableResponse response = client.waiter().waitUtilTableExists(b -> b.tableName("table"));
+WaiterResponse<DescribeTableResponse> response = waiter.waitUntilTableExists(b -> b.tableName("table"));
+```
+
+- instantiate a waiter object from builder
+
+```java
+DynamodbWaiter waiter = DynamoDbWaiter.builder()
+                                      .client(client)
+                                      .pollingStrategy(p -> p.maxAttempts(10))
+                                      .build();
+
+WaiterResponse<DescribeTableResponse> response = waiter.waitUntilTableExists(b -> b.tableName("table"));
+
 ```
 
 #### Example 2: Using async waiters
 
+- instantiate a waiter object from an existing service client
+
 ```Java
 DynamoDbAsyncClient asyncClient = DynamoDbAsyncClient.create();
+DynamoDbAsyncWaiter waiter = asyncClient.waiter();
 
-CompletableFuture<DescribeTableResponse> responseFuture = 
-    asyncClient.waiter().waitUtilTableExists(b -> b.tableName("table"));
+CompletableFuture<WaiterResponse<DescribeTableResponse>> responseFuture = waiter.waitUntilTableExists(b -> b.tableName("table"));
+
 ```
+
+- instantiate a waiter object from builder
+
+```java
+DynamoDbAsyncWaiter waiter = DynamoDbAsyncWaiter.builder()
+                                                .client(asyncClient)
+                                                .pollingStrategy(p -> p.maxAttempts(10))
+                                                .build();
+
+CompletableFuture<WaiterResponse<DescribeTableResponse>> responseFuture = waiter.waitUntilTableExists(b -> b.tableName("table"));
+```
+
 
 *FAQ Below: "Why not create waiter operations directly on the client?"*
 
@@ -45,19 +75,18 @@ CompletableFuture<DescribeTableResponse> responseFuture =
 
 ```Java
 Waiter<DescribeTableResponse> waiter =
-   Waiter.<DescribeTableResponse>builder()
-        .addAcceptor(WaiterAcceptor.successAcceptor(r -> r.table().tableStatus().equals(TableStatus.ACTIVE)))
-        .addAcceptor(WaiterAcceptor.retryAcceptor(t -> t instanceof ResourceNotFoundException))
-        .addAcceptor(WaiterAcceptor.errorAcceptor(t -> t instanceof InternalServerErrorException))
-        .maxAttempts(20)
-        .backoffStrategy(BackoffStrategy.defaultStrategy())
-        .build();
+   Waiter.builder(DescribeTableResponse.class)
+         .addAcceptor(WaiterAcceptor.successAcceptor(r -> r.table().tableStatus().equals(TableStatus.ACTIVE)))
+         .addAcceptor(WaiterAcceptor.retryAcceptor(t -> t instanceof ResourceNotFoundException))
+         .addAcceptor(WaiterAcceptor.errorAcceptor(t -> t instanceof InternalServerErrorException))
+         .pollingStrategy(p -> p.maxAttemps(20).backoffStrategy(BackoffStrategy.defaultStrategy())
+         .build();
 
 // run synchronousely 
-DescribeTableResponse response = waiter.run(() -> client.describeTable(describeTableRequest));
+WaiterResponse<DescribeTableResponse> response = waiter.run(() -> client.describeTable(describeTableRequest));
 
 // run asychronousely
-CompletableFuture<DescribeTableResponse> responseFuture =
+CompletableFuture<WaiterResponse<DescribeTableResponse>> responseFuture =
       waiter.runAsync(() -> asyncClient.describeTable(describeTableRequest));
 ```
 
@@ -84,12 +113,12 @@ public interface DynamoDbWaiter {
      * @param describeTableRequest Represents the input of a <code>DescribeTable</code> operation.
      * @return {@link DescribeTableResponse}
      */
-    default DescribeTableResponse waitUtilTableExists(DescribeTableRequest describeTableRequest) {
+    default WaiterResponse<DescribeTableResponse> waitUntilTableExists(DescribeTableRequest describeTableRequest) {
         throw new UnsupportedOperationException();
     }
 
-    default DescribeTableResponse waitUtilTableExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
-        return waitUtilTableExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
+    default WaiterResponse<DescribeTableResponse> waitUntilTableExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
+        return waitUntilTableExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
     }
 
     /**
@@ -98,12 +127,26 @@ public interface DynamoDbWaiter {
      *
      * @param describeTableRequest Represents the input of a <code>DescribeTable</code> operation.
      */
-    default void waitUtilTableNotExists(DescribeTableRequest describeTableRequest) {
+    default WaiterResponse<DescribeTableResponse> waitUntilTableNotExists(DescribeTableRequest describeTableRequest) {
         throw new UnsupportedOperationException();
     }
 
-    default void waitUtilTableNotExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
-        waitUtilTableNotExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
+    default void waitUntilTableNotExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
+        return waitUntilTableNotExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
+    }
+
+    interface Builder {
+    
+        Builder client(DynamoDbClient client);
+        
+        /**
+         * Define the {@link PollingStrategy} that computes the delay before the next retry request.
+         * @param backoffStrategy the backoff strategy
+         * @return the chained builder
+         */
+        Builder pollingStrategy(PollingStrategy backoffStrategy);
+
+        DynamoDbWaiter build();
     }
 }
 
@@ -112,11 +155,11 @@ public interface DynamoDbWaiter {
  */
 @SdkPublicApi
 @Generated("software.amazon.awssdk:codegen")
-public interface DynamoDbAsyncWaiter {
+public interface DynamoDbAsyncWaiter extends ServiceWaiter {
 
     /**
      * Poller method that waits for the table status to transition to <code>ACTIVE</code> by
-     * invoking {@link DynamoDbAsyncClient#describeTable}. It returns when the resource enters into a desired state or
+     * invoking {@link DynamoDbClient#describeTable}. It returns when the resource enters into a desired state or
      * it is determined that the resource will never enter into the desired state.
      *
      * @param describeTableRequest Represents the input of a <code>DescribeTable</code> operation.
@@ -124,16 +167,16 @@ public interface DynamoDbAsyncWaiter {
      * successfully when the resource enters into a desired state or it completes exceptionally when it is determined that the
      * resource will never enter into the desired state.
      */
-    default CompletableFuture<DescribeTableResponse> waitUtilTableExists(DescribeTableRequest describeTableRequest) {
+    default CompletableFuture<WaiterResponse<DescribeTableResponse>> waitUntilTableExists(DescribeTableRequest describeTableRequest) {
         throw new UnsupportedOperationException();
     }
 
-    default CompletableFuture<DescribeTableResponse> waitUtilTableExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
-        return waitUtilTableExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
+    default CompletableFuture<WaiterResponse<DescribeTableResponse>> waitUntilTableExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
+        return waitUntilTableExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
     }
 
     /**
-     * Poller method that waits until the table does not exists by invoking {@link DynamoDbAsyncClient#describeTable}.
+     * Poller method that waits until the table does not exists by invoking {@link DynamoDbClient#describeTable}.
      * It returns when the resource enters into a desired state or it is determined that the resource will never enter into the desired state.
      *
      * @param describeTableRequest Represents the input of a <code>DescribeTable</code> operation.
@@ -141,21 +184,38 @@ public interface DynamoDbAsyncWaiter {
      * successfully when the resource enters into a desired state or it completes exceptionally when it is determined that the
      * resource will never enter into the desired state.
      */
-    default CompletableFuture<Void> waitUtilTableNotExists(DescribeTableRequest describeTableRequest) {
+    default CompletableFuture<WaiterResponse<ResourceNotFoundException>> waitUntilTableNotExists(DescribeTableRequest describeTableRequest) {
         throw new UnsupportedOperationException();
     }
 
-    default CompletableFuture<Void> waitUtilTableNotExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
-        return waitUtilTableNotExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
+    default CompletableFuture<WaiterResponse<ResourceNotFoundException>> waitUntilTableNotExists(Consumer<DescribeTableRequest.Builder> describeTableRequest) {
+        return waitUntilTableNotExists(DescribeTableRequest.builder().applyMutation(describeTableRequest).build());
     }
+
+    interface Builder {
+        
+        Builder client(DynamoDbAsyncClient client);
+        
+        /**
+         * Define the {@link PollingStrategy} that computes the delay before the next retry request.
+         * @param backoffStrategy the backoff strategy
+         * @return the chained builder
+         */
+        Builder pollingStrategy(PollingStrategy backoffStrategy);
+
+        DynamoDbAsyncWaiter build();
+    }
+
 }
 ```
 
-*FAQ Below: "Why returning the service response for waiter operations with a success state of a specific response" and "Why not returning a response for waiter operations with a success state of error?"*.
+*FAQ Below: "Why returning a WaiterResponse wrapper class"*.
 
 #### Instantiation
 
-This class can be instantiated from an existing service client
+This class can be instantiated from an existing service client or builder
+
+- from an existing service client
 
 ```Java
 // sync waiter
@@ -167,39 +227,74 @@ DynamoDbClient dynamoAsync = DynamoDbAsyncClient.create();
 DynamoDbAsyncWaiter dynamoAsyncWaiter = dynamoAsync.waiter();
 ```
 
+- from waiter builder
+
+```java
+// sync waiter
+DynamodbWaiter waiter = DynamoDbWaiter.builder()
+              .client(client)
+              .pollingStrategy(p -> p.maxAttempts(10))
+              .build();
+
+
+// async waiter
+DynamoDbAsyncWaiter asyncWaiter = DynamoDbAsyncWaiter.builder()
+                           .client(asyncClient)
+                           .pollingStrategy(p -> p.maxAttempts(10))
+                           .build();
+
+
+```
+
+
 #### Methods
 
 A method will be generated for each operation that needs waiter support. There are two categories depending on the expected success state.
 
-- Operations with a desired condition where a specific *successful* response is returned
-  - sync: `{Operation}Response waitUtil{DesiredState}({Operation}Request)`
+  - sync: `WaiterResponse<{Operation}Response> waitUntil{DesiredState}({Operation}Request)`
     ```java
-    DescribeTableResponse waitUtilTableExists(DescribeTableRequest describeTableRequest)
+    WaiterResponse<DescribeTableResponse> waitUntilTableExists(DescribeTableRequest describeTableRequest)
     ```
-  - async: `CompletableFuture<{Operation}Response> waitUtil{DesiredState}({Operation}Request)`
+  - async: `CompletableFuture<WaiterResponse<{Operation}Response>> waitUntil{DesiredState}({Operation}Request)`
     ```java
-    CompletableFuture<DescribeTableResponse> waitUtilTableExists(DescribeTableRequest describeTableRequest)
+    CompletableFuture<WaiterResponse<DescribeTableResponse>> waitUntilTableExists(DescribeTableRequest describeTableRequest)
     ```
-- Operations with a desired condition where a specific *exception* is thrown
-  - sync: `void waitUtil{DesiredState}({Operation}Request)`
-    ```java
-    void waitUtilTableNotExists(DescribeTableRequest describeTableRequest)
-    ```
-  - async: `CompletableFuture<Void> waitUtil{DesiredState}({Operation}Request)`
-    ```java
-    CompletableFuture<Void> waitUtilTableNotExists(DescribeTableRequest describeTableRequest)
-    ```
+
+### `WaiterResponse<T>`
+```java
+/**
+ * The response returned from a waiter operation
+ * @param <T> the type of the response
+ */
+@SdkPublicApi
+public interface WaiterResponse<T> {
+
+    /**
+     * @return the response received that has matched with the waiter success condition
+     */
+    Optional<T> response();
+    
+
+    /**
+     * @return the optional exception that has matched with the waiter success condition
+     */
+    Optional<Throwable> exception();
+
+}
+```
+
+*FAQ Below: "Why making response and exception optional"*.
     
 ### `Waiter<T>`
 
-The generic `Waiter` class enables users to customize waiter configurations and provide their own `WaiterAcceptor`s which define the expected states and controls
-the terminal state of the waiter.
+The generic `Waiter` class enables users to customize waiter configurations and provide their own `WaiterAcceptor`s which define the expected states and controls the terminal state of the waiter.
 
 #### Methods
 
 ```java
 @SdkPublicApi
-public final class Waiter<T> {
+public interface Waiter<T> {
+
     /**
      * Runs the provided polling function. It completes when the resource enters into a desired state or
      * it is determined that the resource will never enter into the desired state.
@@ -209,19 +304,27 @@ public final class Waiter<T> {
      * successfully when the resource enters into a desired state or it completes exceptionally when it is determined that the
      * resource will never enter into the desired state.
      */
-    public CompletableFuture<T> runAsync(Supplier<CompletableFuture<T>> asyncPollingFunction) {
-     ...
-    }
+    CompletableFuture<WaiterResponse<T>> runAsync(Supplier<CompletableFuture<T>> asyncPollingFunction);
 
     /**
-     * Runs the provided polling function. It returns when the resource enters into a desired state or
+     * It returns when the resource enters into a desired state or
      * it is determined that the resource will never enter into the desired state.
      *
      * @param pollingFunction Represents the input of a <code>DescribeTable</code> operation.
      * @return the response
      */
-    public T run(Supplier<T> pollingFunction) {
-        ...
+    WaiterResponse<T> run(Supplier<T> pollingFunction);
+    
+    
+    /**
+     * Creates a newly initialized builder for the waiter object.
+     *
+     * @param responseClass the response class
+     * @param <T> the type of the response
+     * @return a Waiter builder
+     */
+    static <T> Builder<T> builder(Class<? extends T> responseClass) {
+        return DefaultWaiter.builder();
     }
 }
 ```
@@ -248,17 +351,13 @@ public final class Waiter<T> {
         Builder<T> addAcceptor(WaiterAcceptor<T> waiterAcceptors);
 
         /**
-         * Define the maximum number of attempts to try before transitioning the waiter to a failure state.
+         * Defines a {@link PollingStrategy} to use when polling the resource
+         *
+         * @param pollingStrategy the polling strategy to use
+         * @return a reference to this object so that method calls can be chained together.
          */
-        Builder<T> maxAttempts(int numRetries);
-
-        /**
-         * Define the {@link BackoffStrategy} that computes the delay before the next retry request.
-         * @param backoffStrategy the backoff strategy
-         * @return the chained builder
-         */
-        Builder<T> backoffStrategy(BackoffStrategy backoffStrategy);
-
+        Builder<T> pollingStrategy(PollingStrategy pollingStrategy);
+        
         /**
          * Define the {@link ScheduledExecutorService} used to schedule async attempts
          *
@@ -267,6 +366,29 @@ public final class Waiter<T> {
          */
         Builder<T> scheduledExecutorService(ScheduledExecutorService scheduledExecutorService);
     }
+```
+
+#### `PollingStrategy`
+
+PollingStragtegy specifies how the waiter polls the resources.
+
+```java
+public interface PollingStrategy {
+
+    /**
+     * Define the maximum number of attempts to try before transitioning the waiter to a failure state.
+     * @return a reference to this object so that method calls can be chained together.
+     */
+    int maxAttempts();
+
+    /**
+     * Define the {@link BackoffStrategy} that computes the delay before the next retry request.
+     *
+     * @return a reference to this object so that method calls can be chained together.
+     */
+    BackoffStrategy backoffStrategy();
+}
+
 ```
 
 ### `WaiterState`
@@ -406,7 +528,7 @@ The following compares Option 1 to Option 2, in the interest of illustrating why
 **Option 1:** create separate waiter utility classes
 
 ```Java
-dynamodb.waiter().waitUtilTableExists(describeTableRequest)
+dynamodb.waiter().untilUntilTableExists(describeTableRequest)
 ```
 
 **Option 2:** create waiter operations on each service client
@@ -427,17 +549,41 @@ dynamodb.waitUntilTableExists(describeTableRequest)
 **Decision:** Option 1 will be used, because it is consistent with existing features and option2 might bloat the size
 of the client, making it more difficult to use.
 
-### Why returning the service response for waiter operations with a success state of a specific response?
+### Why returning `WaiterResponse`?
 
-The reason that the last response that has satisfied the waiter success state is returned is because it is a common pattern that customers creates a resource and then
-retrieves the information of the resources. Without returning the response, customers will have to send an extra request when the waiter returns. 
-See [feature request](https://github.com/aws/aws-sdk-java/issues/815)
+For waiter operations that awaits a resource to be created, the last successful response sometimes contains important metadata such as resourceId, which is often required for customers to perform other actions with the resource. Without returning the response, customers will have to send an extra request to retrieve the response. This is a [feature request](https://github.com/aws/aws-sdk-java/issues/815) from v1 waiter implementation.
 
-### Why not returning a response for waiter operations with a success state of error?
+For waiter operations that treats a specific exception as the success state, some customers might still want to access the exception to retrieve the requestId or raw response.
 
-For waiters that treats a specific exception as the success state, there is really no final service response to return. Alternatively, we could introduce 
-a `WaiterResponse` that contains the exception, but it seems overkill considering that the waiter operations with a desired state of error
-are mostly associated with deleting resources and the use case for the exception is not very clear.
+A `WaiterResposne` wrapper class is created to provide either the response or exception depending on what triggers the waiter to reach the desired state. It also provides flexibility to add more metadata such as `attemptExecuted` in the future if needed.
+
+
+### Why making response and exception optional in `WaiterResponse`?
+
+Per the SDK's style guideline `UseOfOptional`,
+
+> `Optional` should be used when it isn't obvious to a caller whether a result will be null.
+
+we make `response` and `exception` optional in `WaiterResponse` because only one of them can be present and it cannot be determined which is present at compile time.
+
+The following example shows how to retrieve a response from `WaiterResponse`
+
+```java
+waiterResponse.response().ifPresent(r -> ...);
+
+```
+
+Another approach is to create a flag field, say `isResponseAvailable`, to indicate if the response is null or not. Customers can check this before accessing `response` to avoid NPE.
+
+```java
+if (waiterResponse.isResponseAvailable()) {
+   DescribeTableResponse response = waiterResponse.response();
+   ...
+}
+
+```
+
+The issue with this approach is that `isResponseAvailable` might not be discovered by customers when they access `WaiterResponse` and they'll have to add null pointer check, otherwise they will end up getting NPEs. It also violates our guideline for the use of optional.
 
 ## References
 
